@@ -109,7 +109,7 @@ def get_attributes(nodes, census_dfs, years, id):
   all_attr = (pd.concat(attr)).drop_duplicates(subset=id)
   all_attr = all_attr[all_attr[id].notna()]
 
-  #Assigning each node it's level in the network (used for mainly drawing)
+  #Assigning each node its level in the network (used for mainly drawing)
   all_attr['network_level'] = all_attr.apply(lambda x: assign_node_level(x, years, id), axis=1)
   return all_attr
 
@@ -188,7 +188,7 @@ def first_year_partial_paths(all_partial_paths, years, final_cols):
     if ((max_partial_year >= years[1]) & (max_partial_year != years[-1])):
         for i in reversed(range((num_years - 1) - max_partial_year)):
             last_col = len(first_year_partials.columns)
-            first_year_partials.insert(last_col, final_cols[-i], np.NaN)
+            first_year_partials.insert(last_col, final_cols[-i], np.nan)
         first_year_partials.columns = final_cols
     first_year_partials = first_year_partials.T.drop_duplicates().dropna().T
     first_year_partials.columns = final_cols
@@ -223,7 +223,7 @@ def unique_partial_paths(all_partial_paths, years, left_cols, final_cols):
 
   #Appending NaN column to the front to account for missing first year
       for k in range(i):
-          curr_year_unique.insert(0, final_cols[k], np.NaN)
+          curr_year_unique.insert(0, final_cols[k], np.nan)
 
   #Appending NaN column to the end to account for missing last year
       if(not curr_year_unique.empty):
@@ -233,7 +233,7 @@ def unique_partial_paths(all_partial_paths, years, left_cols, final_cols):
           if (curr_year_index != years[-1]):
               for j in range((num_years - 1) - curr_year_index):
                   last_col = len(curr_year_unique.columns)
-                  curr_year_unique.insert(last_col, final_cols[-j], np.NaN)
+                  curr_year_unique.insert(last_col, final_cols[-j], np.nan)
 
           curr_year_unique.columns = final_cols
       unique_partials = pd.concat([unique_partials, curr_year_unique])
