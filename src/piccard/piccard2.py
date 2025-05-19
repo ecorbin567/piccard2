@@ -6,7 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import math
 import re
-import piccard
+import piccard as pc
 
 from tscluster.opttscluster import OptTSCluster
 # from tscluster.tskmeans import TSKmeans, TSGlobalKmeans
@@ -14,8 +14,14 @@ from tscluster.preprocessing.utils import load_data
 # from tscluster.metrics import inertia, max_dist
 # from tscluster.tsplot import tsplot
 
-def clustering_prep (network_table, id):
+def clustering_prep(network_table, id):
     '''
+    Converts a piccard network table into a 3d numpy array of all possible paths and their corresponding
+    features. This will be used for clustering with tscluster.
+    Note that you must run pc.create_network_table() before this function.
+
+    Returns a tuple of a 3d numpy array and a corresponding dictionary of labels showing
+    the shape of the array.
     '''
     # Find all years present in the data. These will be used as timesteps for tscluster.
     col_list = network_table.columns.to_list()
@@ -48,8 +54,19 @@ def clustering_prep (network_table, id):
     # label dictionary. This can then be preprocessed using tscluster's scalers.
     return load_data(list_of_arrays)
 
-def cluster(network_table, id, num_clusters, scheme):
+def cluster(network_table, G, id, num_clusters, scheme):
     '''
+    Runs one of tscluster's clustering algorithms and adds the resulting cluster assignments to the
+    nodes as an additional feature.
     '''
+    # Get the data into the correct format. See the documentation for clustering_prep
     arr, label_dict = clustering_prep(network_table, id)
-
+    
+    # Initialize the model
+    opt_ts = OptTSCluster(
+        n_clusters=num_clusters,
+        scheme=scheme,
+        n_allow_assignment_change=None # Allow as many changes as possible
+    )
+    # Assign clusters
+    opt_ts.fit(arr, label_dict=label_dict)
