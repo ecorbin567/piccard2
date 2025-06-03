@@ -70,10 +70,15 @@ def clustering_prep(network_table, id, cols=[]):
 def cluster(network_table, G, id, num_clusters, scheme='z1c1', arr=None, label_dict=None):
     '''
     Runs one of tscluster's clustering algorithms (default is fully dynamic clustering)
-    and adds the resulting cluster assignments to the nodes as an additional feature.
+    and adds the resulting cluster assignments to the network table and nodes as an additional feature.
     Users can choose to only input the network table, in which case clustering_prep will be run for them with the default columns,
     or they can choose to run clustering_prep on their own and then have the option to apply one or both of the
     normalization methods available in tscluster.preprocessing.utils.
+
+    Returns an OptTSCluster object with useful labels, cluster assignments, etc for future visualizations.
+
+    Note that you may need to download a Gurobi academic licence to run the clustering algorithm. More information here:
+    https://www.gurobi.com/academia/academic-program-and-licenses/
     '''
     # Get the data into the correct format. See the documentation for clustering_prep
     if arr is None and label_dict is None:
@@ -107,6 +112,7 @@ def cluster(network_table, G, id, num_clusters, scheme='z1c1', arr=None, label_d
                 # figure out which cluster to assign a node to if it's already been assigned to a different cluster
                 if 'cluster_assignment' in node[1] and node[1]['cluster_assignment'] != cluster:
                     old_dict = opt_ts.get_named_cluster_centers(label_dict=label_dict)[node[1]['cluster_assignment']].loc[year]
+                    # comparing distances between clusters
                     old_cluster_distance = 0
                     new_cluster_distance = 0
                     for i in range(len(dict)):
