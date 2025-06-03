@@ -1,6 +1,7 @@
 import pandas as pd
 import geopandas as gpd
 import numpy as np
+import math
 import matplotlib.pyplot as plt
 from tscluster.opttscluster import OptTSCluster
 from tscluster.preprocessing.utils import load_data, tnf_to_ntf, ntf_to_tnf
@@ -12,7 +13,6 @@ import piccard as pc
 
 # unused
 import networkx as nx
-import math
 import re
 
 def clustering_prep(network_table, id, cols=[]):
@@ -90,6 +90,35 @@ def cluster(network_table, G, id, num_clusters, scheme='z1c1', arr=None, label_d
     )
     # Assign clusters
     opt_ts.fit(arr, label_dict=label_dict)
+
+    # Add cluster assignments to network table
+    cluster_assignments_table = opt_ts.get_named_labels(label_dict=label_dict)
+    network_table['cluster_assignment_2011'] = list(cluster_assignments_table['2011'])
+    network_table['cluster_assignment_2021'] = list(cluster_assignments_table['2021'])
+
+    # Add cluster assignments to graph nodes
+    nodes_list = list(G.nodes(data=True))
+    for node in nodes_list:
+            year = node[0][:4]
+            cluster = network_table.loc[network_table[f'geouid_{year}'] == node[0]]
+            if len(cluster) != 0:
+                cluster = int(cluster.iloc[0][f'cluster_assignment_{year}'])
+                dict = opt_ts.get_named_cluster_centers(label_dict=label_dict)[cluster].loc[year]
+                # figure out which cluster to assign a node to if it's already been assigned to a different cluster
+                if 'cluster_assignment' in node[1] and node[1]['cluster_assignment'] != cluster:
+                    old_dict = opt_ts.get_named_cluster_centers(label_dict=label_dict)[node[1]['cluster_assignment']].loc[year]
+                    old_cluster_distance = 0
+                    new_cluster_distance = 0
+                    for i in range(len(dict)):
+                        old_cluster_distance += (math.abs(int(node[1][label_dict['F'][i]]) - int(old_dict[i])))
+                        new_cluster_distance += (math.abs(int(node[1][label_dict['F'][i]]) - int(dict[i])))
+                    if old_cluster_distance < new_cluster_distance:
+                        cluster = node[1]['cluster_assignment']
+                node[1]['cluster_assignment'] = cluster
+            elif 'cluster_assignment' not in node[1]:
+                node[1]['cluster_assignment'] = np.nan
+    
+    return opt_ts
 
 
 # Helpers
