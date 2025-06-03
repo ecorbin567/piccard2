@@ -1,18 +1,19 @@
-import warnings
 import pandas as pd
 import geopandas as gpd
-import networkx as nx
 import numpy as np
 import matplotlib.pyplot as plt
-import math
-import re
+from tscluster.opttscluster import OptTSCluster
+from tscluster.preprocessing.utils import load_data, tnf_to_ntf, ntf_to_tnf
+
+import warnings
+warnings.filterwarnings('ignore')
+
 import piccard as pc
 
-from tscluster.opttscluster import OptTSCluster
-# from tscluster.tskmeans import TSKmeans, TSGlobalKmeans
-from tscluster.preprocessing.utils import load_data
-# from tscluster.metrics import inertia, max_dist
-# from tscluster.tsplot import tsplot
+# unused
+import networkx as nx
+import math
+import re
 
 def clustering_prep(network_table, id, cols=[]):
     '''
@@ -32,8 +33,75 @@ def clustering_prep(network_table, id, cols=[]):
 
     # Find all years present in the data. These will be used as timesteps for tscluster.
     year_cols = [col for col in network_table.columns.to_list() if id in col]
-    years = list({col[-4:] for col in year_cols})
+    years = sorted(list({col[-4:] for col in year_cols}))
 
+    # Filter columns
+    filtered_cols = filter_columns(network_table, id, years, cols)
+
+    # Extract features for each year and add them to a 2D array representing that year. 
+    # Then add that array to a list of arrays representing the 3D array used for tscluster.
+    list_of_arrays = []
+    for year in years:
+        year_statistics = network_table[[col for col in filtered_cols[0] if year in col]].to_numpy()
+        list_of_arrays.append(year_statistics)
+    
+    # Filter out entities whose features are entirely NaN
+    # Run load_data now so we get access to variables necessary for tnf_to_ntf
+    list_of_arrays = load_data(list_of_arrays)[0] 
+    ntf_list_of_arrays = tnf_to_ntf(list_of_arrays)
+    count = -1
+    for entity in ntf_list_of_arrays:
+        count += 1
+        number_in_entity = False
+        for i in entity.flat:
+            if not np.isnan(i):
+                number_in_entity = True
+                break
+        if not number_in_entity:
+            np.delete(ntf_list_of_arrays, count, 0)
+    list_of_arrays = ntf_to_tnf(ntf_list_of_arrays)
+    
+    # Return the final numpy array and create a corresponding label dictionary.
+    # This can then be preprocessed using tscluster's scalers.
+    label_dict = {'T': years, 'N': [f'Path {i}' for i in range(count + 1)], 'F': filtered_cols[1]}
+    return (list_of_arrays, label_dict)
+
+
+def cluster(network_table, G, id, num_clusters, scheme='z1c1', arr=None, label_dict=None):
+    '''
+    Runs one of tscluster's clustering algorithms (default is fully dynamic clustering)
+    and adds the resulting cluster assignments to the nodes as an additional feature.
+    Users can choose to only input the network table, in which case clustering_prep will be run for them with the default columns,
+    or they can choose to run clustering_prep on their own and then have the option to apply one or both of the
+    normalization methods available in tscluster.preprocessing.utils.
+    '''
+    # Get the data into the correct format. See the documentation for clustering_prep
+    if arr is None and label_dict is None:
+        arr, label_dict = clustering_prep(network_table, id)
+
+    # Set every nan value in the array to an absurdly impossible value so it doesn't throw off clustering
+    arr = np.nan_to_num(arr, nan = -1000000)
+    
+    # Initialize the model
+    opt_ts = OptTSCluster(
+        n_clusters=num_clusters,
+        scheme=scheme,
+        n_allow_assignment_change=None # Allow as many changes as possible
+    )
+    # Assign clusters
+    opt_ts.fit(arr, label_dict=label_dict)
+
+
+# Helpers
+
+def filter_columns(network_table, id, years, cols=[]):
+    '''
+    Checks that the list of columns with data to be clustered is valid in the following ways:
+    - Makes sure all the data in the columns are numerical or nan
+    - Makes sure there is a version of each column for every year
+    Returns a tuple of the final filtered list of columns and the column labels that will
+    be used for the label dictionary.
+    '''
     # Only add features that are numerical or nan. the user should have selected accordingly
     # but this is a sanity check
     col_list = []
@@ -61,8 +129,9 @@ def clustering_prep(network_table, id, cols=[]):
     # the 3D array used for tscluster will not make sense.
     # note: we can improve on this with some version of the ppandas library (https://link.springer.com/article/10.1007/s10618-024-01054-7)
     cols_in_every_year = []
+    features_list = [] # for the label dictionary
     add_to_list = True
-    col_names_without_year = list({col[:-4] for col in col_list})
+    col_names_without_year = list(dict.fromkeys([col[:-4] for col in col_list])) # remove duplicates while preserving original order
     for col in col_names_without_year:
         add_to_list = True
         for year in years:
@@ -71,39 +140,8 @@ def clustering_prep(network_table, id, cols=[]):
                 break
         for year in years:
             if add_to_list:
+                if col[:-1] not in features_list:
+                    features_list.append(col[:-1])
                 cols_in_every_year.append(f"{col}{year}")
 
-    # Extract features for each year and add them to a 2D array representing that year. 
-    # Then add that array to a list of arrays representing the 3D array used for tscluster.
-    list_of_arrays = []
-    for year in years:
-        year_statistics = network_table[[col for col in cols_in_every_year if year in col]].to_numpy()
-        list_of_arrays.append(year_statistics)
-    
-    # Run load_data and return the resulting tuple of a 3d numpy array and its corresponding
-    # label dictionary. This can then be preprocessed using tscluster's scalers.
-    return load_data(list_of_arrays)
-
-def cluster(network_table, G, id, num_clusters, scheme='z1c1', arr=None, label_dict=None):
-    '''
-    Runs one of tscluster's clustering algorithms (default is fully dynamic clustering)
-    and adds the resulting cluster assignments to the nodes as an additional feature.
-    Users can choose to only input the network table, in which case clustering_prep will be run for them with the default columns,
-    or they can choose to run clustering_prep on their own and then have the option to apply one or both of the
-    normalization methods available in tscluster.preprocessing.utils.
-    '''
-    # Get the data into the correct format. See the documentation for clustering_prep
-    if arr is None and label_dict is None:
-        arr, label_dict = clustering_prep(network_table, id)
-
-    # Set every nan value in the array to an absurdly impossible value so it doesn't throw off clustering
-    arr = np.nan_to_num(arr, nan = -1000000)
-    
-    # Initialize the model
-    opt_ts = OptTSCluster(
-        n_clusters=num_clusters,
-        scheme=scheme,
-        n_allow_assignment_change=None # Allow as many changes as possible
-    )
-    # Assign clusters
-    opt_ts.fit(arr, label_dict=label_dict)
+    return (cols_in_every_year, features_list)
