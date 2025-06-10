@@ -64,8 +64,17 @@ def clustering_prep(network_table, id, cols=[]):
                 break
         if not number_in_entity:
             np.delete(ntf_list_of_arrays, count, 0)
+
+    # Interpolate remaining nan values for clustering
+    # for entity in ntf_list_of_arrays:
+    #     transposed_entity = entity.T
+    #     for row in transposed_entity:
+    #         nans = np.isnan(row)
+    #         x = np.arange(len(row))
+    #         row[nans] = np.interp(x[nans], x[~nans], row[~nans])
+
     list_of_arrays = ntf_to_tnf(ntf_list_of_arrays)
-    
+                
     # Return the final numpy array and create a corresponding label dictionary.
     # This can then be preprocessed using tscluster's scalers.
     label_dict = {'T': years, 'N': [f'Path {i}' for i in range(count + 1)], 'F': filtered_cols[1]}
@@ -103,7 +112,7 @@ def cluster(network_table, G, id, num_clusters, scheme='z1c1', arr=None, label_d
     if arr is None and label_dict is None:
         arr, label_dict = clustering_prep(network_table, id)
 
-    # Set every nan value in the array to an absurdly impossible value so it doesn't throw off clustering
+    # nan method 1: Set every nan value in the array to an absurdly impossible value so it doesn't throw off clustering
     arr = np.nan_to_num(arr, nan = -1000000)
     
     # Initialize the model
@@ -192,6 +201,14 @@ def plot_clusters(network_table, opt_ts, clusters=[], exclude_clusters=[], colou
                 else:
                     new_values.append(np.nan)
             plt.plot(years, new_values, color='black', linestyle='--', alpha=0.5) # add lines
+
+        # plot cluster centres
+        for i in range(len(opt_ts.cluster_centers_[0])):
+            if i in clusters and i not in exclude_clusters:
+                cluster_centre_values = [opt_ts.get_named_cluster_centers()[i][feature].loc[year] 
+                                         if opt_ts.get_named_cluster_centers()[i][feature].loc[year] >= 0 
+                                         else np.nan for year in years]
+                plt.plot(years, cluster_centre_values, color=colours[i])
 
         # create legend
         unique_colours = {}
