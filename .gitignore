@@ -2,4 +2,5 @@
 .vscode/
 src/piccard/__pycache__/
 docs/__pycache__/
+docs/piccard2/
 census_data.R
