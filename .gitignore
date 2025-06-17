@@ -1,5 +1,5 @@
 .idea/
 .vscode/
-.src/piccard/__pycache__/
-.docs/__pycache__/
-.census_data.R
+src/piccard/__pycache__/
+docs/__pycache__/
+census_data.R
