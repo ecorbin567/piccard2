@@ -3,10 +3,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd # for type annotations
 import networkx as nx # for type annotations
-from typing import Union, Any # for type annotations
+from typing import Union, Any, List, Tuple, Optional # for type annotations
 from tscluster.opttscluster import OptTSCluster
 from tscluster.greedytscluster import GreedyTSCluster
 from tscluster.preprocessing.utils import load_data, tnf_to_ntf, ntf_to_tnf
+import plotly.express as px
+import plotly.graph_objects as go
+
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -295,3 +298,270 @@ def filter_columns(network_table, years, cols=[]):
                 cols_in_every_year.append(f"{col}{year}")
 
     return (cols_in_every_year, features_list)
+
+
+def join_geometries(
+        geojson_path: str,
+        network_table: pd.DataFrame,
+        year: str,
+        geojson_id_col: str = "GeoUID",
+        network_table_id_column: str = "geouid"
+) -> gpd.GeoDataFrame:
+    """
+
+    Joins spatial data from a GeoJSON file with attribute data from a network table
+    using a shared geographic identifier
+
+    This function is designed for researchers who work with pre-processed network tables
+    (containing cluster assignments, IDs, etc.) and separately downloaded spatial files
+    (like Canadian census tract GeoJSONs)
+
+    Parameters:
+        geojson_path (str):
+            File path to the GeoJSON file for the specified year.
+
+        network_table (pd.DataFrame):
+            DataFrame containing attribute and cluster assignment data, including unique
+            geographic identifiers for each region.
+
+        year (str):
+            The census year to match ID and cluster columns (e.g., '2016').
+
+        geojson_id_col (str):
+            Column name in the GeoJSON that contains the geographic identifier
+            (default: 'GeoUID').
+
+        network_table_id_column (str):
+            Prefix of the column name in the network_table used for geographic ID matching.
+            The function expects a column like 'geouid_2016' if year='2016'.
+
+    Returns:
+        gpd.GeoDataFrame:
+            A merged GeoDataFrame containing geometry from the GeoJSON file and attribute
+            data (e.g., cluster assignments) from the network table. Only valid, non-empty
+            geometries are retained.
+    """
+
+    # Validate input column name
+    geoid_col = f"{network_table_id_column}_{year}"
+    if geoid_col not in network_table.columns:
+        raise ValueError(f"Expected column '{geoid_col}' not found in network_table.")
+
+    # Read the GeoJSON file into a GeoDataFrame
+    gdf = gpd.read_file(geojson_path)
+
+    # Prepare a clean copy of the network table and standardize the ID format
+    network_table_copy = network_table.copy(deep=True)
+    network_table_copy[geoid_col] = network_table_copy[geoid_col].astype(str).str.replace(r'^\d{4}_', '', regex=True)
+
+    # Merge the GeoDataFrame with the network table using the geographic ID
+    merged_gdf = gdf.merge(network_table_copy, left_on=geojson_id_col, right_on=geoid_col)
+
+    # Remove empty or invalid geometries
+    merged_gdf = merged_gdf[~merged_gdf.is_empty & merged_gdf.geometry.notnull()]
+
+    return merged_gdf
+
+
+# Plot & Visuals
+
+def parallel_plot(network_table: pd.DataFrame, feature_name: str, years: List[str], title: str = "Tract Paths Across Years",
+                  height: int = 600) -> go.Figure:
+    """
+    Creates an interactive parallel categories (parallel sets) plot using Plotly Express
+    to visualize how categorical features (e.g., cluster assignments) evolve over time.
+
+    Each column in the plot corresponds to a time point (e.g., a census year), and each
+    path across the columns represents a "temporal path" of a tract or unit as it transitions
+    across categories.
+
+    Parameters:
+        network_table (pd.DataFrame):
+            A DataFrame containing the data. Expected to include one column per year
+            with names in the format <feature_name>_<year>, e.g., 'cluster_assignment_2016'.
+
+        feature_name (str):
+            The prefix of the column names to be visualized (e.g., 'cluster_assignment').
+
+        years (List[str]):
+            A list of strings representing the time points to include, such as ['2011', '2016', '2021'].
+
+        Optional Parameters:
+            title (str, optional):
+                Title for the plot. Default is 'Tract Paths Across Years'.
+
+            height (int, optional):
+                Height of the plot in pixels. Default is 600.
+
+    Returns:
+        plotly.graph_objects.Figure:
+            A Plotly Figure object that can be displayed with .show() or used in dashboards.
+
+    """
+
+    # Construct column names dynamically from feature name and years
+    columns = [f"{feature_name}_{year}" for year in years]
+
+    # Ensure all target columns exist in the dataframe
+    for col in columns:
+        if col not in network_table.columns:
+            raise ValueError(f"Column '{col}' not found in the provided DataFrame.")
+
+    # Generate the plot
+    fig = px.parallel_categories(
+        network_table,
+        dimensions=columns,
+        labels={col: f"{col[-4:]}" for col in columns},
+        title=title,
+        template="plotly_white",
+        height=height, )
+    fig.update_layout(font_size=15)
+    return fig
+
+
+def cluster_count_plot(
+        network_table: pd.DataFrame,
+        feature_name: str,
+        years: List[str],
+        title: str = "Cluster",
+        x_label: str = "Year",
+        y_label: str = "Number of Census Tracts",
+        legend_title: str = "Cluster",
+        figure_size: Tuple[int, int] = (12, 6),
+        stacked: bool = True,
+) -> plt:
+    """
+    Plots the change in cluster composition over time using an area chart.
+
+    Each area represents the number of units (e.g., census tracts) assigned to a specific cluster
+    across different years. The input DataFrame should contain categorical cluster assignments
+    per year with column names formatted as <feature_name>_<year>.
+
+    Parameters:
+        network_table (pd.DataFrame):
+            A DataFrame containing the data. Expected to include one column per year
+            with names in the format <feature_name>_<year>, e.g., 'cluster_assignment_2016'.
+
+        feature_name (str):
+            The prefix of the column names to be visualized (e.g., 'cluster_assignment').
+
+        years (List[str]):
+            A list of strings representing the time points to include, such as ['2011', '2016', '2021'].
+
+        Optional Parameters:
+            title (str):
+            Plot title. Default is "Cluster Composition Over Time".
+
+            x_label (str):
+                X-axis label. Default is "Year".
+
+            y_label (str):
+                Y-axis label. Default is "Number of Census Tracts".
+
+            legend_title (str):
+                Title for the legend. Default is "Cluster".
+
+            figure_size (Tuple[int, int]):
+                Size of the figure. Default is (12, 6).
+
+            stacked (bool):
+                Whether to stack the area plot. Default is True.
+    Returns:
+       plt or matplotlib.figure.Figure:
+            Matplotlib plot or figure object
+    """
+
+    # Count number of tracts in each cluster for that year and sort the cluster labels
+    cluster_counts = pd.DataFrame()
+    for year in years:
+        column = f'{feature_name}_{year}'
+        if column not in network_table.columns:
+            raise ValueError(f"Expected column '{column}' not found in DataFrame.")
+        counts = network_table[
+            column].value_counts().sort_index()  # Sorting just to ensure the ordering will be correct
+        cluster_counts[year] = counts
+
+    # Transpose so years are rows (X-axis) and clusters are columns (stacked areas)
+    cluster_counts = cluster_counts.astype(int).T
+
+    # Plot setup
+    figure, axes = plt.subplots(figsize=figure_size)
+    cluster_counts.plot(kind="area", stacked=stacked, ax=axes, cmap="tab20")
+
+    axes.set_title(title, fontsize=16)
+    axes.set_xlabel(x_label, fontsize=12)
+    axes.set_ylabel(y_label, fontsize=12)
+
+    # Legend outside the plot for readability
+    plt.legend(title=legend_title, bbox_to_anchor=(1.05, 1), loc='upper left')  # Adding color keys
+    plt.tight_layout()  # Adjusting the padding
+
+    return plt
+
+
+def clustered_map_plot(
+        year: str,
+        cluster_col_prefix: str,
+        geojson_path: Optional[str] = None,
+        network_table: Optional[pd.DataFrame] = None,
+        gdf: Optional[gpd.GeoDataFrame] = None,
+        figure_size: tuple = (10, 10),
+) -> plt.Figure:
+    """
+    Plot cluster assignments for a specific year using a GeoDataFrame
+
+    Parameters:
+        year (str):
+            Year to visualize (used in column name)
+
+        cluster_col_prefix (str):
+            Prefix for cluster assignment column (e.g., 'cluster_assignment')
+
+        geojson_path (str, optional):
+            Path to GeoJSON if gdf is not passed
+
+        network_table (pd.DataFrame, optional):
+            Network table to be merged with GeoJSON
+
+        gdf (GeoDataFrame, optional):
+            Pre-joined GeoDataFrame (recommended for advanced users)
+
+        figure_size (tuple):
+            Size of the figure
+
+    Returns:
+        matplotlib.figure.Figure: The figure object for further use or saving
+    """
+
+    cluster_col = f"{cluster_col_prefix}_{year}"
+
+    # Load and join if no GeoDataFrame was passed
+    if gdf is None:
+        if geojson_path is None or network_table is None:
+            raise ValueError("Either `gdf` or both `geojson_path` and `network_table` must be provided.")
+        gdf = join_geometries(geojson_path, network_table, year)
+
+    # Ensure the cluster column exists
+    if cluster_col not in gdf.columns:
+        raise ValueError(f"Column '{cluster_col}' not found in GeoDataFrame.")
+
+    # Once we have the data we will make the plot
+    gdf[cluster_col] = gdf[cluster_col].astype(str)
+
+    # Plot
+    figure, axes = plt.subplots(1, 1, figsize=figure_size)
+    gdf.plot(
+        column=cluster_col,
+        cmap="tab10",
+        linewidth=0.2,
+        edgecolor='grey',
+        legend=True,
+        ax=axes
+    )
+
+    axes.set_title(f"Clusters in {year}", fontsize=15)
+    axes.axis("off")
+
+    plt.tight_layout()  # Adjusting the padding
+
+    return figure
