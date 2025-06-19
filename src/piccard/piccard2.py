@@ -128,13 +128,15 @@ def cluster(network_table:pd.DataFrame, G:nx.Graph, id:str, num_clusters:int, al
         tsc = OptTSCluster(
             n_clusters=num_clusters,
             scheme=scheme,
-            n_allow_assignment_change=None # Allow as many changes as possible
+            n_allow_assignment_change=None, # Allow as many changes as possible
+            random_state=3
         )
     elif algo.lower() == 'greedy':
         tsc = GreedyTSCluster(
             n_clusters=num_clusters,
             scheme=scheme,
-            n_allow_assignment_change=None # Allow as many changes as possible
+            n_allow_assignment_change=None, # Allow as many changes as possible
+            random_state=3
         )
     else:
         raise ValueError("Please ensure algo is either greedy or opt.")
@@ -173,6 +175,7 @@ def cluster(network_table:pd.DataFrame, G:nx.Graph, id:str, num_clusters:int, al
     
     return tsc
 
+# Plot & Visuals
 
 def plot_clusters(network_table:pd.DataFrame, tsc:Union[OptTSCluster, GreedyTSCluster], dynamic_only:bool=True, clusters:list=[], exclude_clusters:list=[], colours:list=[]) -> None:
     '''
@@ -244,126 +247,6 @@ def plot_clusters(network_table:pd.DataFrame, tsc:Union[OptTSCluster, GreedyTSCl
         plt.title(feature)
         plt.show()
 
-
-# Helpers
-
-def filter_columns(network_table, years, cols=[]):
-    '''
-    Checks that the list of columns with data to be clustered is valid in the following ways:
-    - Makes sure all the data in the columns are numerical or nan
-    - Makes sure there is a version of each column for every year
-    Returns a tuple of the final filtered list of columns and the column labels that will
-    be used for the label dictionary.
-    '''
-    # Only add features that are numerical or nan. the user should have selected accordingly
-    # but this is a sanity check
-    col_list = []
-
-    for col in cols:
-        if col in network_table.columns.to_list():
-            non_numerical_val_in_col = False
-            for entry in network_table[col]:
-                if isinstance(entry, str) and '_' in entry: # make sure underscores don't get converted to numbers
-                    non_numerical_val_in_col = True
-                    break
-                try:
-                    int(entry)  # see if it is either an int or an int masquerading as a string
-                except ValueError:
-                    try:
-                        float(entry)  # see if it is either a float or a float masquerading as a string
-                    except ValueError:
-                        if entry != 'NaN' and entry != 'nan': # see if it is nan
-                            non_numerical_val_in_col = True
-                            break
-            if not non_numerical_val_in_col:
-                col_list.append(col)
-
-    # Only add features for which there are variables in every year. Otherwise the shape of
-    # the 3D array used for tscluster will not make sense.
-    # note: we can improve on this with some version of the ppandas library (https://link.springer.com/article/10.1007/s10618-024-01054-7)
-    cols_in_every_year = []
-    features_list = [] # for the label dictionary
-    add_to_list = True
-    col_names_without_year = list(dict.fromkeys([col[:-4] for col in col_list])) # remove duplicates while preserving original order
-    for col in col_names_without_year:
-        add_to_list = True
-        for year in years:
-            if f"{col}{year}" not in col_list:
-                add_to_list = False
-                break
-        for year in years:
-            if add_to_list:
-                if col[:-1] not in features_list:
-                    features_list.append(col[:-1])
-                cols_in_every_year.append(f"{col}{year}")
-
-    return (cols_in_every_year, features_list)
-
-
-def join_geometries(
-        geojson_path: str,
-        network_table: pd.DataFrame,
-        year: str,
-        geojson_id_col: str = "GeoUID",
-        network_table_id_column: str = "geouid"
-) -> gpd.GeoDataFrame:
-    """
-
-    Joins spatial data from a GeoJSON file with attribute data from a network table
-    using a shared geographic identifier
-
-    This function is designed for researchers who work with pre-processed network tables
-    (containing cluster assignments, IDs, etc.) and separately downloaded spatial files
-    (like Canadian census tract GeoJSONs)
-
-    Parameters:
-        geojson_path (str):
-            File path to the GeoJSON file for the specified year.
-
-        network_table (pd.DataFrame):
-            DataFrame containing attribute and cluster assignment data, including unique
-            geographic identifiers for each region.
-
-        year (str):
-            The census year to match ID and cluster columns (e.g., '2016').
-
-        geojson_id_col (str):
-            Column name in the GeoJSON that contains the geographic identifier
-            (default: 'GeoUID').
-
-        network_table_id_column (str):
-            Prefix of the column name in the network_table used for geographic ID matching.
-            The function expects a column like 'geouid_2016' if year='2016'.
-
-    Returns:
-        gpd.GeoDataFrame:
-            A merged GeoDataFrame containing geometry from the GeoJSON file and attribute
-            data (e.g., cluster assignments) from the network table. Only valid, non-empty
-            geometries are retained.
-    """
-
-    # Validate input column name
-    geoid_col = f"{network_table_id_column}_{year}"
-    if geoid_col not in network_table.columns:
-        raise ValueError(f"Expected column '{geoid_col}' not found in network_table.")
-
-    # Read the GeoJSON file into a GeoDataFrame
-    gdf = gpd.read_file(geojson_path)
-
-    # Prepare a clean copy of the network table and standardize the ID format
-    network_table_copy = network_table.copy(deep=True)
-    network_table_copy[geoid_col] = network_table_copy[geoid_col].astype(str).str.replace(r'^\d{4}_', '', regex=True)
-
-    # Merge the GeoDataFrame with the network table using the geographic ID
-    merged_gdf = gdf.merge(network_table_copy, left_on=geojson_id_col, right_on=geoid_col)
-
-    # Remove empty or invalid geometries
-    merged_gdf = merged_gdf[~merged_gdf.is_empty & merged_gdf.geometry.notnull()]
-
-    return merged_gdf
-
-
-# Plot & Visuals
 
 def parallel_plot(network_table: pd.DataFrame, feature_name: str, years: List[str], title: str = "Tract Paths Across Years",
                   height: int = 600) -> go.Figure:
@@ -565,3 +448,120 @@ def clustered_map_plot(
     plt.tight_layout()  # Adjusting the padding
 
     return figure
+
+# Helpers
+
+def filter_columns(network_table, years, cols=[]):
+    '''
+    Checks that the list of columns with data to be clustered is valid in the following ways:
+    - Makes sure all the data in the columns are numerical or nan
+    - Makes sure there is a version of each column for every year
+    Returns a tuple of the final filtered list of columns and the column labels that will
+    be used for the label dictionary.
+    '''
+    # Only add features that are numerical or nan. the user should have selected accordingly
+    # but this is a sanity check
+    col_list = []
+
+    for col in cols:
+        if col in network_table.columns.to_list():
+            non_numerical_val_in_col = False
+            for entry in network_table[col]:
+                if isinstance(entry, str) and '_' in entry: # make sure underscores don't get converted to numbers
+                    non_numerical_val_in_col = True
+                    break
+                try:
+                    int(entry)  # see if it is either an int or an int masquerading as a string
+                except ValueError:
+                    try:
+                        float(entry)  # see if it is either a float or a float masquerading as a string
+                    except ValueError:
+                        if entry != 'NaN' and entry != 'nan': # see if it is nan
+                            non_numerical_val_in_col = True
+                            break
+            if not non_numerical_val_in_col:
+                col_list.append(col)
+
+    # Only add features for which there are variables in every year. Otherwise the shape of
+    # the 3D array used for tscluster will not make sense.
+    # note: we can improve on this with some version of the ppandas library (https://link.springer.com/article/10.1007/s10618-024-01054-7)
+    cols_in_every_year = []
+    features_list = [] # for the label dictionary
+    add_to_list = True
+    col_names_without_year = list(dict.fromkeys([col[:-4] for col in col_list])) # remove duplicates while preserving original order
+    for col in col_names_without_year:
+        add_to_list = True
+        for year in years:
+            if f"{col}{year}" not in col_list:
+                add_to_list = False
+                break
+        for year in years:
+            if add_to_list:
+                if col[:-1] not in features_list:
+                    features_list.append(col[:-1])
+                cols_in_every_year.append(f"{col}{year}")
+
+    return (cols_in_every_year, features_list)
+
+
+def join_geometries(
+        geojson_path: str,
+        network_table: pd.DataFrame,
+        year: str,
+        geojson_id_col: str = "GeoUID",
+        network_table_id_column: str = "geouid"
+) -> gpd.GeoDataFrame:
+    """
+
+    Joins spatial data from a GeoJSON file with attribute data from a network table
+    using a shared geographic identifier
+
+    This function is designed for researchers who work with pre-processed network tables
+    (containing cluster assignments, IDs, etc.) and separately downloaded spatial files
+    (like Canadian census tract GeoJSONs)
+
+    Parameters:
+        geojson_path (str):
+            File path to the GeoJSON file for the specified year.
+
+        network_table (pd.DataFrame):
+            DataFrame containing attribute and cluster assignment data, including unique
+            geographic identifiers for each region.
+
+        year (str):
+            The census year to match ID and cluster columns (e.g., '2016').
+
+        geojson_id_col (str):
+            Column name in the GeoJSON that contains the geographic identifier
+            (default: 'GeoUID').
+
+        network_table_id_column (str):
+            Prefix of the column name in the network_table used for geographic ID matching.
+            The function expects a column like 'geouid_2016' if year='2016'.
+
+    Returns:
+        gpd.GeoDataFrame:
+            A merged GeoDataFrame containing geometry from the GeoJSON file and attribute
+            data (e.g., cluster assignments) from the network table. Only valid, non-empty
+            geometries are retained.
+    """
+
+    # Validate input column name
+    geoid_col = f"{network_table_id_column}_{year}"
+    if geoid_col not in network_table.columns:
+        raise ValueError(f"Expected column '{geoid_col}' not found in network_table.")
+
+    # Read the GeoJSON file into a GeoDataFrame
+    gdf = gpd.read_file(geojson_path)
+
+    # Prepare a clean copy of the network table and standardize the ID format
+    network_table_copy = network_table.copy(deep=True)
+    network_table_copy[geoid_col] = network_table_copy[geoid_col].astype(str).str.replace(r'^\d{4}_', '', regex=True)
+
+    # Merge the GeoDataFrame with the network table using the geographic ID
+    merged_gdf = gdf.merge(network_table_copy, left_on=geojson_id_col, right_on=geoid_col)
+
+    # Remove empty or invalid geometries
+    merged_gdf = merged_gdf[~merged_gdf.is_empty & merged_gdf.geometry.notnull()]
+
+    return merged_gdf
