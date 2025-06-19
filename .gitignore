@@ -2,3 +2,8 @@
 src/piccard/__pycache__/*
 Clustered_network.csv
 
+__pycache__/
+*.py[cod]
+
+#src/piccard/__pycache__/piccard2.cpython-312.pyc
+#src/piccard/__pycache__/piccard.cpython-312.pyc

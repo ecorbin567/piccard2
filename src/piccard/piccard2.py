@@ -554,7 +554,7 @@ def clustered_map_plot(
         column=cluster_col,
         cmap="tab10",
         linewidth=0.2,
-        edgecolor='grey',
+        edgecolor='black',
         legend=True,
         ax=axes
     )
