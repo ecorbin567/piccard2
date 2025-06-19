@@ -1,4 +1,9 @@
 .idea/
+__pycache__/
+*.py[cod]
+
+
+
 .venv/
 .vscode/
 src/piccard/__pycache__/
@@ -6,3 +11,5 @@ docs/__pycache__/
 docs/piccard2/
 census_data.R
 Clustered_network.csv
+
+

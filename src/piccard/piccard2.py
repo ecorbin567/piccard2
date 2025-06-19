@@ -385,7 +385,7 @@ def cluster_count_plot(
 def clustered_map_plot(
         year: str,
         cluster_col_prefix: str,
-        geojson_path: Optional[str] = None,
+        geofile_path: Optional[str] = None,
         network_table: Optional[pd.DataFrame] = None,
         gdf: Optional[gpd.GeoDataFrame] = None,
         figure_size: tuple = (10, 10),
@@ -400,8 +400,8 @@ def clustered_map_plot(
         cluster_col_prefix (str):
             Prefix for cluster assignment column (e.g., 'cluster_assignment')
 
-        geojson_path (str, optional):
-            Path to GeoJSON if gdf is not passed
+        geofile_path (str, optional):
+            Path to geographical data file if gdf is not passed
 
         network_table (pd.DataFrame, optional):
             Network table to be merged with GeoJSON
@@ -420,9 +420,9 @@ def clustered_map_plot(
 
     # Load and join if no GeoDataFrame was passed
     if gdf is None:
-        if geojson_path is None or network_table is None:
-            raise ValueError("Either `gdf` or both `geojson_path` and `network_table` must be provided.")
-        gdf = join_geometries(geojson_path, network_table, year)
+        if geofile_path is None or network_table is None:
+            raise ValueError("Either `gdf` or both `geofile_path` and `network_table` must be provided.")
+        gdf = join_geometries(geofile_path, network_table, year)
 
     # Ensure the cluster column exists
     if cluster_col not in gdf.columns:
@@ -505,24 +505,26 @@ def filter_columns(network_table, years, cols=[]):
 
 
 def join_geometries(
-        geojson_path: str,
+        geofile_path: str,
         network_table: pd.DataFrame,
         year: str,
-        geojson_id_col: str = "GeoUID",
+        geofile_id_col: str = "GeoUID",
         network_table_id_column: str = "geouid"
 ) -> gpd.GeoDataFrame:
     """
 
-    Joins spatial data from a GeoJSON file with attribute data from a network table
-    using a shared geographic identifier
+    Joins spatial data from a geographical data file with attribute data from a network table
+    using a shared geographic identifier.
 
     This function is designed for researchers who work with pre-processed network tables
     (containing cluster assignments, IDs, etc.) and separately downloaded spatial files
-    (like Canadian census tract GeoJSONs)
+    (like Canadian census tract GeoJSONs). It's recommended to run this function yourself
+    before plotting cluster assignments with cluster_map_plot if you are using a column id different
+    from the default 'geouid'.
 
     Parameters:
-        geojson_path (str):
-            File path to the GeoJSON file for the specified year.
+        geofile_path (str):
+            File path to the geographical data file for the specified year. Can be anything readable by geopandas.
 
         network_table (pd.DataFrame):
             DataFrame containing attribute and cluster assignment data, including unique
@@ -531,8 +533,8 @@ def join_geometries(
         year (str):
             The census year to match ID and cluster columns (e.g., '2016').
 
-        geojson_id_col (str):
-            Column name in the GeoJSON that contains the geographic identifier
+        geofile_id_col (str):
+            Column name in the geographical data file that contains the geographic identifier
             (default: 'GeoUID').
 
         network_table_id_column (str):
@@ -552,14 +554,14 @@ def join_geometries(
         raise ValueError(f"Expected column '{geoid_col}' not found in network_table.")
 
     # Read the GeoJSON file into a GeoDataFrame
-    gdf = gpd.read_file(geojson_path)
+    gdf = gpd.read_file(geofile_path)
 
     # Prepare a clean copy of the network table and standardize the ID format
     network_table_copy = network_table.copy(deep=True)
     network_table_copy[geoid_col] = network_table_copy[geoid_col].astype(str).str.replace(r'^\d{4}_', '', regex=True)
 
     # Merge the GeoDataFrame with the network table using the geographic ID
-    merged_gdf = gdf.merge(network_table_copy, left_on=geojson_id_col, right_on=geoid_col)
+    merged_gdf = gdf.merge(network_table_copy, left_on=geofile_id_col, right_on=geoid_col)
 
     # Remove empty or invalid geometries
     merged_gdf = merged_gdf[~merged_gdf.is_empty & merged_gdf.geometry.notnull()]
