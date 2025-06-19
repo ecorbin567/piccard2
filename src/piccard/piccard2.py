@@ -125,13 +125,15 @@ def cluster(network_table:pd.DataFrame, G:nx.Graph, id:str, num_clusters:int, al
         tsc = OptTSCluster(
             n_clusters=num_clusters,
             scheme=scheme,
-            n_allow_assignment_change=None # Allow as many changes as possible
+            n_allow_assignment_change=None, # Allow as many changes as possible
+            random_state=3
         )
     elif algo.lower() == 'greedy':
         tsc = GreedyTSCluster(
             n_clusters=num_clusters,
             scheme=scheme,
-            n_allow_assignment_change=None # Allow as many changes as possible
+            n_allow_assignment_change=None, # Allow as many changes as possible
+            random_state=3
         )
     else:
         raise ValueError("Please ensure algo is either greedy or opt.")
