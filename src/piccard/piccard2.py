@@ -199,9 +199,7 @@ def plot_clusters(
     cluster_centres= tsc.cluster_centers_
     labels = tsc.labels_
 
-    # define arrays of shapes of timesteps, entities, features, and cluster centres
-    T = arr.shape[0] if arr is not None else cluster_centres.shape[0]
-    N = arr.shape[1] if arr is not None else 0
+    # define arrays of shapes of features and cluster centres. we will be using them to iterate
     F = arr.shape[2] if arr is not None else cluster_centres.shape[2]
     K = cluster_centres.shape[1] if cluster_centres is not None else (np.unique(labels).size if labels is not None else 1)
 
@@ -228,11 +226,14 @@ def plot_clusters(
     fig = plotly.subplots.make_subplots(rows=shape_of_subplot[0], cols=shape_of_subplot[1], subplot_titles=title_list, shared_xaxes=False, vertical_spacing=0.06)
     
     # figure out which entities to show
-    entities_to_show = [item for item in entities_to_show if any([cluster in [int(i) for i in list(network_table.iloc[item][-4:])] for cluster in clusters_to_show])]
-    entities_to_show = [item for item in entities_to_show if all([cluster not in [int(i) for i in list(network_table.iloc[item][-4:])] for cluster in clusters_to_exclude])]
+    entities_to_show = [item for item in entities_to_show 
+                        if any([cluster in [int(i) for i in list(network_table.iloc[item][-len(label_dict['T']):])] 
+                                for cluster in clusters_to_show])]
+    entities_to_show = [item for item in entities_to_show 
+                        if all([cluster not in [int(i) for i in list(network_table.iloc[item][-len(label_dict['T']):])] 
+                                for cluster in clusters_to_exclude])]
     if dynamic_entities_only:
-        dynamic_entities = [label_dict['N'].index(i) for i in tsc.get_dynamic_entities()[0]]
-        entities_to_show = [item for item in entities_to_show if item in dynamic_entities]
+        entities_to_show = [item for item in entities_to_show if item in tsc.get_dynamic_entities()[0]]
 
     # iterate through features
     for f in range(F):
