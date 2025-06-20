@@ -186,121 +186,105 @@ def plot_clusters(
     entities_to_show: List[int] | None = None,
     clusters_to_show: List[int] | None = None, 
     clusters_to_exclude: List[int] = [],
-    cluster_centres_to_show: List[int] | None = None,
-    figsize: Tuple[float, float] | None = None,
-    shape_of_subplot: Tuple[int, int] | None = None,
+    figsize: Tuple[float, float] = (700, 500),
     cluster_labels: List[str] | None = None,
     title_list: List[str] | None = None,
     x_rotation: float | int = 45,
     hover_labels: bool = False,
-    ) -> go.Figure:
+) -> List[go.Figure]:
+    '''
+    
+    '''
 
-    # define cluster centres and labels from tsc
-    cluster_centres= tsc.cluster_centers_
+    # get necessary data from tsc
+    cluster_centres = tsc.cluster_centers_
     labels = tsc.labels_
 
-    # define arrays of shapes of features and cluster centres. we will be using them to iterate
-    F = arr.shape[2] if arr is not None else cluster_centres.shape[2]
-    K = cluster_centres.shape[1] if cluster_centres is not None else (np.unique(labels).size if labels is not None else 1)
+    # prepare the variables we will use to iterate through features and cluster centres
+    F = arr.shape[2]
+    K = cluster_centres.shape[1] if cluster_centres is not None else np.unique(labels).size
 
-    # set default values
+    # set default values and colours
     if entities_to_show is None:
-        entities_to_show = label_dict['N'] # show all entities
+        entities_to_show = list(range(arr.shape[1]))  # show all
     if clusters_to_show is None:
-        clusters_to_show = [i for i in range(K)] # show all clusters
-    if cluster_centres_to_show is None:
-        cluster_centres_to_show = [i for i in range(K)] # show all cluster centres
-    if shape_of_subplot is None:
-        shape_of_subplot = (F, 1)
+        clusters_to_show = list(range(K))
     if cluster_labels is None:
-        cluster_labels = [i for i in range(K)]
+        cluster_labels = [str(i) for i in range(K)]
     if title_list is None:
         title_list = [f"Feature {f}" for f in label_dict['F']]
-
-    # set colours
     colors = plotly.colors.qualitative.Plotly
     if K > len(colors):
         colors = list(islice(cycle(colors), K))
 
-    # define subplots for each feature
-    fig = plotly.subplots.make_subplots(rows=shape_of_subplot[0], cols=shape_of_subplot[1], subplot_titles=title_list, shared_xaxes=False, vertical_spacing=0.06)
-    
-    # figure out which entities to show
-    entities_to_show = [item for item in entities_to_show 
-                        if any([cluster in [int(i) for i in list(network_table.iloc[item][-len(label_dict['T']):])] 
-                                for cluster in clusters_to_show])]
-    entities_to_show = [item for item in entities_to_show 
-                        if all([cluster not in [int(i) for i in list(network_table.iloc[item][-len(label_dict['T']):])] 
-                                for cluster in clusters_to_exclude])]
+    # filter entities
+    entities_to_show = [
+        i for i in entities_to_show
+        if any(int(c) in clusters_to_show for c in network_table.iloc[i][-len(label_dict['T']):])
+        and all(int(c) not in clusters_to_exclude for c in network_table.iloc[i][-len(label_dict['T']):])
+    ]
     if dynamic_entities_only:
-        entities_to_show = [item for item in entities_to_show if item in tsc.get_dynamic_entities()[0]]
+        dynamic_entities = set(tsc.get_dynamic_entities()[0])
+        entities_to_show = [i for i in entities_to_show if i in dynamic_entities]
 
-    # iterate through features
+    figures = []
+
     for f in range(F):
-        row = f + 1
-        col = 1
-        if arr is not None:
-            # iterate through each path
-            for i in entities_to_show:
+        fig = go.Figure()
+        used_clusters = set()
+        # iterate through each path
+        for i in entities_to_show:
+            mode = 'lines+markers' if hover_labels else 'lines'
+            # plot lines indicating values
+            fig.add_trace(
+                go.Scatter(
+                    x=label_dict['T'],
+                    y=arr[:, i, f],
+                    mode=mode,
+                    line=dict(color='black', dash='dot'),
+                    showlegend=False
+                )
+            )
+            # plot coloured dots indicating cluster
+            label_i = labels[i] if labels.ndim == 1 else labels[i, 0]
+            used_clusters.add(int(label_i))
+            fig.add_trace(
+                go.Scatter(
+                    x=label_dict['T'],
+                    y=arr[:, i, f],
+                    mode='markers',
+                    marker=dict(color=colors[int(label_i)], size=6),
+                    name=f"Path {i}",
+                    showlegend=False
+                )
+            )
+        # plot cluster centres
+        for j in range(K):
+            if j in used_clusters:
                 mode = 'lines+markers' if hover_labels else 'lines'
-                # plot lines indicating values
                 fig.add_trace(
                     go.Scatter(
                         x=label_dict['T'],
-                        y=arr[:, i, f],
+                        y=cluster_centres[:, j, f],
                         mode=mode,
-                        line=dict(color='black', dash='dot'),
-                        showlegend=False
-                    ),
-                    row=row, col=col
+                        line=dict(color=colors[j]),
+                        name=f"Cluster {cluster_labels[j]}"
+                    )
                 )
-                # plot coloured dots indicating cluster
-                if labels is not None:
-                    label_i = labels[i] if labels.ndim == 1 else labels[i, 0]
-                    fig.add_trace(
-                        go.Scatter(
-                            x=label_dict['T'],
-                            y=arr[:, i, f],
-                            mode='markers',
-                            marker=dict(color=colors[int(label_i)], size=6),
-                            name=f"Path {i}",
-                            showlegend=False
-                        ),
-                        row=row, col=col
-                    )
-        # plot cluster centres
-        if cluster_centres is not None:
-            for j in range(K):
-                if j in cluster_centres_to_show:
-                    mode = 'lines+markers' if hover_labels else 'lines'
-                    fig.add_trace(
-                        go.Scatter(
-                            x=label_dict['T'],
-                            y=cluster_centres[:, j, f],
-                            mode=mode,
-                            line=dict(color=colors[j]),
-                            name=f"Cluster {cluster_labels[j]}" if f == 0 else None,
-                            showlegend=(f == 0)
-                        ),
-                        row=row, col=col
-                    )
-        # add axis labels
-        fig.update_xaxes(title_text='Year' if f == F - 1 else "", tickangle=x_rotation, row=row, col=col)
-        fig.update_yaxes(title_text='Value', row=row, col=col)
-    
-    # set default figsize
-    if figsize is None:
-        figsize = (700, 500 * len(range(F)))
-    
-    # add title and legend
-    fig.update_layout(
-        width= figsize[0],
-        height= figsize[1],
-        title="Clustering Results",
-        legend_title="Legend",
-        showlegend=True,
-    )
-    return fig
+                
+        # create layout and add figure to return list
+        fig.update_layout(
+            width=figsize[0],
+            height=figsize[1],
+            title=title_list[f],
+            xaxis_title="Year",
+            yaxis_title="Value",
+            xaxis=dict(tickangle=x_rotation),
+            legend_title="Legend",
+        )
+        figures.append(fig)
+
+    return figures
 
 
 def parallel_plot(network_table: pd.DataFrame, feature_name: str, years: List[str], title: str = "Tract Paths Across Years",
